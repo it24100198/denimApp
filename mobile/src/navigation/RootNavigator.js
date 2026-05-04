@@ -14,6 +14,8 @@ import RegisterScreen from '../screens/auth/RegisterScreen';
 import ResourceScreen from '../screens/main/ResourceScreen';
 import HourlyProductionScreen from '../screens/main/HourlyProductionScreen';
 import QualityControlScreen from '../screens/main/QualityControlScreen';
+import FinalCheckingScreen from '../screens/main/FinalCheckingScreen';
+import FinalDetailScreen from '../screens/main/FinalDetailScreen';
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme/colors';
 
@@ -56,6 +58,8 @@ function WorkspaceStack() {
       <Stack.Screen name="Detail" component={DetailScreen} options={({ route }) => ({ title: route.params?.title || 'Detail' })} />
       <Stack.Screen name="Form" component={FormScreen} options={({ route }) => ({ title: route.params?.title || 'Add Record' })} />
       <Stack.Screen name="QualityControl" component={QualityControlScreen} options={{ title: 'Quality Control Board' }} />
+      <Stack.Screen name="FinalChecking" component={FinalCheckingScreen} options={{ title: 'Final Checking Board' }} />
+      <Stack.Screen name="FinalDetail" component={FinalDetailScreen} options={{ title: 'Final Inspection' }} />
     </Stack.Navigator>
   );
 }

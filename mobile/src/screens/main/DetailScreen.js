@@ -365,7 +365,7 @@ export default function DetailScreen({ route, navigation }) {
       return;
     }
     if (action === 'final_board') {
-      navigation.navigate('Resource', { moduleKey: 'manufacturing', itemKey: 'final', title: 'Final Checking' });
+      navigation.navigate('FinalChecking');
     }
   };
 

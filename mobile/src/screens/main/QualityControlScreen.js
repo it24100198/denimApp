@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Button from '../../components/Button';
@@ -7,7 +7,7 @@ import Card from '../../components/Card';
 import LoadingState from '../../components/LoadingState';
 import ScreenScaffold from '../../components/ScreenScaffold';
 import TextField from '../../components/TextField';
-import { getQcDetail, saveQc } from '../../api/client';
+import { getQcDetail, saveQc, issueAccessoryToBatch, sendBatchToFinalCheck, getMaterials, getEmployees } from '../../api/client';
 import { colors } from '../../theme/colors';
 
 export default function QualityControlScreen({ route, navigation }) {
@@ -18,6 +18,10 @@ export default function QualityControlScreen({ route, navigation }) {
   const [goodQty, setGoodQty] = useState('');
   const [damagedQty, setDamagedQty] = useState('');
   const [notes, setNotes] = useState('');
+  const [materials, setMaterials] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [accessoryModal, setAccessoryModal] = useState({ visible: false, batchId: null });
+  const [accessoryForm, setAccessoryForm] = useState({ materialId: '', quantityIssued: '', issuedTo: '' });
 
   const load = useCallback(async () => {
     if (!transferId) return;
@@ -66,11 +70,65 @@ export default function QualityControlScreen({ route, navigation }) {
         damagedQty: dmgN,
         notes: notes.trim(),
       });
-      Alert.alert('Success', 'QC results saved successfully.', [
-        { text: 'OK', onPress: () => navigation.goBack() }
-      ]);
+      Alert.alert('Success', 'QC results saved successfully and batches generated.');
+      load(); // Refresh to show batches
     } catch (err) {
       Alert.alert('Save Failed', err.response?.data?.error || err.message || 'Could not save QC results.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSendToFinal = async (batchId) => {
+    Alert.alert('Send to Final', 'Move this batch to final checking?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Send',
+        onPress: async () => {
+          setSaving(true);
+          try {
+            await sendBatchToFinalCheck(batchId);
+            Alert.alert('Success', 'Batch moved to final checking.');
+            load();
+          } catch (err) {
+            Alert.alert('Error', err.response?.data?.error || err.message || 'Could not update batch.');
+          } finally {
+            setSaving(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const openAccessoryModal = async (batchId) => {
+    setAccessoryModal({ visible: true, batchId });
+    setAccessoryForm({ materialId: '', quantityIssued: '', issuedTo: '' });
+    try {
+      const [matRes, empRes] = await Promise.all([getMaterials(), getEmployees()]);
+      setMaterials(matRes.data || matRes);
+      setEmployees(empRes.data || empRes);
+    } catch (err) {
+      console.error('Meta load failed', err);
+    }
+  };
+
+  const submitAccessory = async () => {
+    if (!accessoryForm.materialId || !accessoryForm.quantityIssued) {
+      Alert.alert('Required', 'Material and quantity are required.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await issueAccessoryToBatch(accessoryModal.batchId, {
+        materialId: accessoryForm.materialId,
+        quantityIssued: Number(accessoryForm.quantityIssued),
+        issuedTo: accessoryForm.issuedTo || 'Packing batch',
+      });
+      Alert.alert('Success', 'Accessory issued successfully.');
+      setAccessoryModal({ visible: false, batchId: null });
+      load();
+    } catch (err) {
+      Alert.alert('Error', err.response?.data?.error || err.message || 'Could not issue accessory.');
     } finally {
       setSaving(false);
     }
@@ -139,34 +197,81 @@ export default function QualityControlScreen({ route, navigation }) {
         </Card>
 
         {qcCheck ? (
-          <Card style={styles.resultsCard}>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="check-decagram" size={20} color={colors.success} />
-              <Text style={styles.cardTitle}>QC RESULTS COMPLETED</Text>
-            </View>
-            <View style={styles.summaryGrid}>
-              <View style={[styles.summaryItem, styles.successBg]}>
-                <Text style={styles.summaryLabel}>GOOD</Text>
-                <Text style={styles.summaryValue}>{qcCheck.finishedGoodQty} pcs</Text>
+          <>
+            <Card style={styles.resultsCard}>
+              <View style={styles.cardHeader}>
+                <MaterialCommunityIcons name="check-decagram" size={20} color={colors.success} />
+                <Text style={styles.cardTitle}>QC RESULTS COMPLETED</Text>
               </View>
-              <View style={[styles.summaryItem, styles.dangerBg]}>
-                <Text style={styles.summaryLabel}>DAMAGED</Text>
-                <Text style={styles.summaryValue}>{qcCheck.damagedQty} pcs</Text>
+              <View style={styles.summaryGrid}>
+                <View style={[styles.summaryItem, styles.successBg]}>
+                  <Text style={styles.summaryLabel}>GOOD</Text>
+                  <Text style={styles.summaryValue}>{qcCheck.finishedGoodQty} pcs</Text>
+                </View>
+                <View style={[styles.summaryItem, styles.dangerBg]}>
+                  <Text style={styles.summaryLabel}>DAMAGED</Text>
+                  <Text style={styles.summaryValue}>{qcCheck.damagedQty} pcs</Text>
+                </View>
               </View>
-            </View>
-            {qcCheck.notes ? (
-              <View style={styles.notesBox}>
-                <Text style={styles.notesLabel}>Notes</Text>
-                <Text style={styles.notesText}>{qcCheck.notes}</Text>
-              </View>
-            ) : null}
+              {qcCheck.notes ? (
+                <View style={styles.notesBox}>
+                  <Text style={styles.notesLabel}>Notes</Text>
+                  <Text style={styles.notesText}>{qcCheck.notes}</Text>
+                </View>
+              ) : null}
+            </Card>
+
+            <Text style={styles.sectionTitle}>Packing Batches</Text>
+            {data?.packingBatches?.map((batch) => (
+              <Card key={batch._id} style={styles.batchCard}>
+                <View style={styles.batchTop}>
+                  <View style={styles.batchInfo}>
+                    <Text style={styles.batchCode}>{batch.batchCode || 'No Code'}</Text>
+                    <View style={styles.batchTypeRow}>
+                      <View style={[styles.typePill, batch.type === 'GOOD' ? styles.successPill : styles.dangerPill]}>
+                        <Text style={[styles.typeText, batch.type === 'GOOD' ? styles.successText : styles.dangerText]}>
+                          {batch.type}
+                        </Text>
+                      </View>
+                      <Text style={styles.batchQty}>{batch.quantity} pcs</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.statusPill, styles[`status_${batch.status}`]]}>
+                    <Text style={[styles.statusText, styles[`statusText_${batch.status}`]]}>
+                      {batch.status?.replace(/_/g, ' ')}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.batchActions}>
+                  <Button 
+                    title="Add Accessory" 
+                    onPress={() => openAccessoryModal(batch._id)} 
+                    variant="outline"
+                    size="small"
+                    icon="plus-circle-outline"
+                    style={styles.batchBtn}
+                    disabled={batch.status !== 'packing'}
+                  />
+                  <Button 
+                    title="Send to Final" 
+                    onPress={() => handleSendToFinal(batch._id)} 
+                    size="small"
+                    icon="send-outline"
+                    style={styles.batchBtn}
+                    disabled={batch.status !== 'packing'}
+                  />
+                </View>
+              </Card>
+            ))}
+
             <Button 
-              title="Go Back" 
+              title="Close Workflow" 
               onPress={() => navigation.goBack()} 
               variant="secondary"
               style={styles.doneButton}
             />
-          </Card>
+          </>
         ) : (
           <View style={styles.formContainer}>
             <Text style={styles.sectionTitle}>Enter QC Quantities</Text>
@@ -253,6 +358,53 @@ export default function QualityControlScreen({ route, navigation }) {
           </View>
         )}
       </ScrollView>
+
+      {/* Accessory Modal */}
+      <Modal visible={accessoryModal.visible} transparent animationType="slide" onRequestClose={() => setAccessoryModal({ visible: false, batchId: null })}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setAccessoryModal({ visible: false, batchId: null })} />
+          <View style={styles.bottomSheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.modalTitle}>Issue Accessory</Text>
+            <Text style={styles.modalSubtitle}>Add materials/accessories to this packing batch.</Text>
+            
+            <View style={styles.formContainer}>
+              <Text style={styles.label}>Select Material</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                {materials.map(m => (
+                  <Pressable 
+                    key={m._id} 
+                    onPress={() => setAccessoryForm(f => ({ ...f, materialId: m._id }))}
+                    style={[styles.chip, accessoryForm.materialId === m._id && styles.chipActive]}
+                  >
+                    <Text style={[styles.chipText, accessoryForm.materialId === m._id && styles.chipTextActive]}>{m.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <TextField 
+                label="Quantity"
+                value={accessoryForm.quantityIssued}
+                onChangeText={v => setAccessoryForm(f => ({ ...f, quantityIssued: v }))}
+                keyboardType="numeric"
+                placeholder="0"
+                icon="numeric"
+              />
+
+              <TextField 
+                label="Issued To / Section"
+                value={accessoryForm.issuedTo}
+                onChangeText={v => setAccessoryForm(f => ({ ...f, issuedTo: v }))}
+                placeholder="e.g. Packing Section"
+                icon="account-outline"
+              />
+
+              <Button title="Confirm Issue" onPress={submitAccessory} loading={saving} style={styles.modalAction} />
+              <Button title="Cancel" variant="secondary" onPress={() => setAccessoryModal({ visible: false, batchId: null })} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenScaffold>
   );
 }
@@ -480,7 +632,150 @@ const styles = StyleSheet.create({
   },
   doneButton: {
     width: '100%',
+    marginTop: 16,
   },
   successText: { color: colors.success },
   primaryText: { color: colors.primary },
+  dangerText: { color: colors.danger },
+
+  // Batch Styles
+  batchCard: {
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 8,
+  },
+  batchTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  batchInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  batchCode: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  batchTypeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  typePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  successPill: { backgroundColor: '#f0fdf4' },
+  dangerPill: { backgroundColor: '#fef2f2' },
+  typeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  batchQty: {
+    fontSize: 14,
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: colors.chip,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
+    textTransform: 'uppercase',
+  },
+  status_packing: { backgroundColor: '#eff6ff' },
+  statusText_packing: { color: '#2563eb' },
+  status_sent_to_final_check: { backgroundColor: '#f0fdf4' },
+  statusText_sent_to_final_check: { color: '#16a34a' },
+  
+  batchActions: {
+    flexDirection: 'row',
+    gap: 10,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    paddingTop: 12,
+  },
+  batchBtn: {
+    flex: 1,
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  bottomSheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: '80%',
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: colors.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.muted,
+    marginBottom: 24,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  chipScroll: {
+    marginBottom: 16,
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: colors.background,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+  },
+  chipTextActive: {
+    color: '#fff',
+  },
+  modalAction: {
+    marginTop: 8,
+    height: 52,
+  },
 });

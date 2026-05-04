@@ -181,6 +181,14 @@ export default function ResourceScreen({ route, navigation }) {
   );
 
   useEffect(() => {
+    if (itemKey === 'hourly') {
+      navigation.replace('HourlyProduction');
+    } else if (itemKey === 'final') {
+      navigation.replace('FinalChecking');
+    }
+  }, [itemKey, navigation]);
+
+  useEffect(() => {
     if (!isAccountModule) return;
     const data = payload?.data ?? payload ?? {};
     setProfileForm({
@@ -1042,8 +1050,7 @@ export default function ResourceScreen({ route, navigation }) {
   };
 
   const renderManufacturingRows = () => {
-    if (itemKey === 'hourly') {
-      navigation.replace('HourlyProduction');
+    if (['hourly', 'final'].includes(itemKey)) {
       return <LoadingState />;
     }
     if (['overview', 'supervisor'].includes(itemKey)) return renderManufacturingDashboard();
