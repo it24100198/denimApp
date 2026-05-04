@@ -1100,6 +1100,11 @@ export default function ResourceScreen({ route, navigation }) {
                       <Text style={styles.rejectSmallText}>Reject</Text>
                     </Pressable>
                   </>
+                ) : itemKey === 'qc' ? (
+                  <Pressable onPress={() => navigation.navigate('QualityControl', { transferId: record._id })} style={({ pressed }) => [styles.approveSmallButton, pressed && styles.pressed, { backgroundColor: colors.primary }]}>
+                    <MaterialCommunityIcons name="clipboard-check-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.approveSmallText}>Open QC Board</Text>
+                  </Pressable>
                 ) : (
                   <Pressable onPress={() => openRecordDetail(record)} style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}>
                     <MaterialCommunityIcons name="timeline-clock-outline" size={17} color={colors.primary} />

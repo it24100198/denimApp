@@ -357,7 +357,11 @@ export default function DetailScreen({ route, navigation }) {
       return;
     }
     if (action === 'qc_board') {
-      navigation.navigate('Resource', { moduleKey: 'manufacturing', itemKey: 'qc', title: 'QC Checking' });
+      if (record?.quantitySent && record?._id) {
+        navigation.navigate('QualityControl', { transferId: record._id });
+      } else {
+        navigation.navigate('Resource', { moduleKey: 'manufacturing', itemKey: 'qc', title: 'QC Checking' });
+      }
       return;
     }
     if (action === 'final_board') {

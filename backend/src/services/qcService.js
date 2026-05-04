@@ -101,7 +101,7 @@ export async function saveQc(transferId, data, userId) {
           notes: data.notes || '',
         },
       ],
-      { session }
+      { session, ordered: true }
     ).then((r) => r[0]);
     await PackingBatch.create(
       [
@@ -122,7 +122,7 @@ export async function saveQc(transferId, data, userId) {
           status: PACKING_BATCH_STATUS.PACKING,
         },
       ],
-      { session }
+      { session, ordered: true }
     );
     return qcCheck.toObject();
   });
